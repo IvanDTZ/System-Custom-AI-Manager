@@ -1,0 +1,10 @@
+.env
+.env.local
+data/
+bin/
+venv/
+__pycache__/
+*.pyc
+*.db
+*.sqlite
+*.sqlite3

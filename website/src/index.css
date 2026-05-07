@@ -1,0 +1,129 @@
+@import "tailwindcss";
+
+/* Project theme tokens (Tailwind v4 @theme inline form) */
+@theme {
+  --color-app: #08080b;
+  --color-surface: rgba(255, 255, 255, 0.04);
+  --color-surface-strong: rgba(255, 255, 255, 0.07);
+  --color-border-soft: rgba(255, 255, 255, 0.08);
+  --color-border-strong: rgba(255, 255, 255, 0.16);
+  --color-text-primary: #f4f4f5;
+  --color-text-muted: #a1a1aa;
+  --color-text-subtle: #71717a;
+  --color-accent: #a78bfa;
+  --color-accent-soft: rgba(167, 139, 250, 0.18);
+  --color-success: #34d399;
+  --color-danger: #f87171;
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+html {
+  color-scheme: dark;
+  background: var(--color-app);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  font-feature-settings: "ss01", "cv11";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(1200px 600px at 80% -200px, rgba(167, 139, 250, 0.18), transparent 60%),
+    radial-gradient(900px 600px at -10% 110%, rgba(56, 189, 248, 0.10), transparent 60%),
+    var(--color-app);
+}
+
+/* Glass primitive used by `card` className */
+@utility card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-soft);
+  border-radius: 1rem;
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+
+@utility hairline {
+  border: 1px solid var(--color-border-soft);
+}
+
+/* Markdown / code styling tweaks */
+.markdown {
+  line-height: 1.7;
+  color: var(--color-text-primary);
+  word-wrap: break-word;
+}
+.markdown p { margin: 0.5em 0; }
+.markdown h1, .markdown h2, .markdown h3, .markdown h4 {
+  font-weight: 600;
+  margin: 1.2em 0 0.4em;
+  letter-spacing: -0.01em;
+}
+.markdown h1 { font-size: 1.5rem; }
+.markdown h2 { font-size: 1.25rem; }
+.markdown h3 { font-size: 1.05rem; }
+.markdown ul, .markdown ol { padding-left: 1.4em; margin: 0.5em 0; }
+.markdown li { margin: 0.2em 0; }
+.markdown a { color: var(--color-accent); text-decoration: underline; text-underline-offset: 3px; }
+.markdown blockquote {
+  border-left: 3px solid var(--color-border-strong);
+  padding-left: 0.9em;
+  margin: 0.6em 0;
+  color: var(--color-text-muted);
+}
+.markdown :not(pre) > code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 0.12em 0.4em;
+  border-radius: 0.35em;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+.markdown table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.6em 0;
+}
+.markdown th, .markdown td {
+  border: 1px solid var(--color-border-soft);
+  padding: 0.4em 0.6em;
+  text-align: left;
+}
+
+/* Highlight.js dark theme — minimal, project palette */
+.hljs { color: #e4e4e7; background: transparent; }
+.hljs-comment, .hljs-quote { color: #71717a; font-style: italic; }
+.hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-section, .hljs-link { color: #c4b5fd; }
+.hljs-string, .hljs-attr, .hljs-template-tag, .hljs-template-variable { color: #86efac; }
+.hljs-number, .hljs-meta, .hljs-symbol, .hljs-bullet { color: #fda4af; }
+.hljs-built_in, .hljs-builtin-name, .hljs-type { color: #93c5fd; }
+.hljs-name, .hljs-attribute, .hljs-tag { color: #f9a8d4; }
+.hljs-title, .hljs-class .hljs-title { color: #fde68a; }
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: 700; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.16); background-clip: content-box; }
+
+/* Focus ring */
+:focus-visible {
+  outline: 2px solid rgba(167, 139, 250, 0.6);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
