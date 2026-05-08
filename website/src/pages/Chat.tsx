@@ -6,7 +6,9 @@ import { Shell } from '../components/layout/Shell'
 import { ChatSidebar } from '../components/chat/ChatSidebar'
 import { Composer } from '../components/chat/Composer'
 import { Message } from '../components/chat/Message'
+import { LiveMessage } from '../components/chat/LiveMessage'
 import { ModelPicker } from '../components/chat/ModelPicker'
+import { useStream } from '../hooks/useStream'
 
 const SUGGESTIONS = [
   { title: 'Explain a concept', subtitle: 'Como si tuviera 12 años' },
@@ -23,10 +25,9 @@ export default function ChatPage() {
   const [chat, setChat] = useState<ChatT | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [model, setModel] = useState<string>('')
-  const [streaming, setStreaming] = useState(false)
-  const [streamBuf, setStreamBuf] = useState('')
-  const ctrlRef = useRef<AbortController | null>(null)
+  const stream = useStream()
   const scrollerRef = useRef<HTMLDivElement | null>(null)
+  const userScrolledUpRef = useRef(false)
 
   const refreshChats = useCallback(async () => {
     try {
@@ -38,23 +39,36 @@ export default function ChatPage() {
   useEffect(() => { refreshChats() }, [refreshChats])
 
   useEffect(() => {
-    if (!idParam) { setChat(null); setMessages([]); return }
+    if (!idParam) { setChat(null); setMessages([]); stream.reset(); return }
     const id = Number(idParam)
     chatApi.getChat(id).then(({ chat }) => {
       setChat(chat)
       setMessages(chat.messages ?? [])
       setModel(chat.model_name)
+      stream.reset()
     }).catch(() => nav('/chat'))
-  }, [idParam, nav])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idParam])
 
-  // Auto-scroll on new content
+  // Smart auto-scroll: only stick to bottom while the user hasn't scrolled up.
   useEffect(() => {
     const s = scrollerRef.current
     if (!s) return
-    s.scrollTop = s.scrollHeight
-  }, [messages, streamBuf])
+    function onScroll() {
+      const distance = s!.scrollHeight - s!.scrollTop - s!.clientHeight
+      userScrolledUpRef.current = distance > 80
+    }
+    s.addEventListener('scroll', onScroll, { passive: true })
+    return () => s.removeEventListener('scroll', onScroll)
+  }, [chat?.id])
 
-  async function handleNewChat() {
+  useEffect(() => {
+    const s = scrollerRef.current
+    if (!s) return
+    if (!userScrolledUpRef.current) s.scrollTop = s.scrollHeight
+  }, [messages, stream.text, stream.state])
+
+  function handleNewChat() {
     nav('/chat')
   }
 
@@ -84,69 +98,49 @@ export default function ChatPage() {
       created_at: new Date().toISOString(),
     }
     setMessages(prev => [...prev, userMsg])
-    setStreamBuf('')
-    setStreaming(true)
-    ctrlRef.current = chatApi.streamMessage(activeChat.id, content, {
-      onToken: (t) => setStreamBuf(b => b + t),
-      onDone: () => {
-        setStreaming(false)
-        setStreamBuf(buf => {
-          if (buf) {
-            setMessages(prev => [...prev, {
-              id: Date.now(),
-              chat_id: activeChat!.id,
-              role: 'assistant',
-              content: buf,
-              model_name: model,
-              created_at: new Date().toISOString(),
-            }])
-          }
-          return ''
-        })
-        refreshChats()
-      },
-      onError: (msg) => {
-        setStreaming(false)
-        setMessages(prev => [...prev, {
-          id: Date.now(),
-          chat_id: activeChat!.id,
-          role: 'assistant',
-          content: `*Error: ${msg}*`,
-          created_at: new Date().toISOString(),
-        }])
-        setStreamBuf('')
-      },
+    userScrolledUpRef.current = false
+
+    stream.start(activeChat.id, content, (info, finalText) => {
+      setMessages(prev => [...prev, {
+        id: info.message_id || Date.now(),
+        chat_id: info.chat_id,
+        role: 'assistant',
+        content: finalText,
+        model_name: model,
+        created_at: new Date().toISOString(),
+      }])
+      refreshChats()
     })
   }
 
   function handleStop() {
-    ctrlRef.current?.abort()
-    setStreaming(false)
-    if (streamBuf) {
-      setMessages(prev => [...prev, {
-        id: Date.now(),
-        chat_id: chat?.id ?? 0,
-        role: 'assistant',
-        content: streamBuf,
-        model_name: model,
-        created_at: new Date().toISOString(),
-      }])
+    if (!stream.text) {
+      stream.stop()
+      return
     }
-    setStreamBuf('')
+    // Persist what we have so far client-side. The backend already persists
+    // the partial assistant message when the connection drops.
+    setMessages(prev => [...prev, {
+      id: Date.now(),
+      chat_id: chat?.id ?? 0,
+      role: 'assistant',
+      content: stream.text,
+      model_name: model,
+      created_at: new Date().toISOString(),
+    }])
+    stream.stop()
   }
 
-  const empty = messages.length === 0 && !streaming && !streamBuf
+  const isStreaming = stream.state === 'streaming' || stream.state === 'queued' || stream.state === 'ready'
+  const showLive = isStreaming || (stream.state === 'error' && !!stream.error)
+  const empty = messages.length === 0 && !showLive
 
-  const liveAssistant: ChatMessage | null = streamBuf
-    ? {
-        id: -1,
-        chat_id: chat?.id ?? 0,
-        role: 'assistant',
-        content: streamBuf,
-        model_name: model,
-        created_at: new Date().toISOString(),
-      }
-    : null
+  const liveHint =
+    stream.state === 'queued'
+      ? `Queued${stream.queuePosition ? ` · #${stream.queuePosition}` : ''}`
+      : stream.state === 'ready'
+      ? 'Generating…'
+      : undefined
 
   return (
     <Shell
@@ -192,16 +186,26 @@ export default function ChatPage() {
             </div>
           ) : (
             <div className="mx-auto flex max-w-3xl flex-col gap-7 px-6 py-8">
-              {messages.map(m => (
-                <Message key={m.id} message={m} />
-              ))}
-              {liveAssistant && <Message message={liveAssistant} streaming />}
+              {messages.map(m => <Message key={m.id} message={m} />)}
+              {showLive && (
+                <LiveMessage text={stream.text} modelName={model} hint={liveHint} />
+              )}
+              {stream.state === 'error' && stream.error && (
+                <div className="rounded-lg border border-red-400/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+                  {stream.error}
+                </div>
+              )}
             </div>
           )}
         </div>
 
         <div className="px-6 pb-6 pt-3">
-          <Composer onSend={handleSend} onStop={handleStop} streaming={streaming} disabled={!model} />
+          <Composer
+            onSend={handleSend}
+            onStop={handleStop}
+            streaming={isStreaming}
+            disabled={!model}
+          />
           {!model && (
             <div className="mx-auto mt-2 max-w-3xl text-center text-xs text-amber-300/80">
               Pick a model from the top-right to start chatting.
@@ -209,7 +213,6 @@ export default function ChatPage() {
           )}
         </div>
       </div>
-
     </Shell>
   )
 }

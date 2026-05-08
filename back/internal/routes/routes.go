@@ -18,6 +18,7 @@ type Deps struct {
 	Cfg    *config.Config
 	DB     *gorm.DB
 	Ollama *ollama.Client
+	Sem    *ollama.Semaphore
 }
 
 func Register(r *gin.Engine, d Deps) {
@@ -37,14 +38,17 @@ func Register(r *gin.Engine, d Deps) {
 	usersH := handlers.NewAdminUsersHandler(d.DB)
 	modelsH := handlers.NewModelsHandler(d.DB, d.Ollama)
 	catsH := handlers.NewCategoriesHandler(d.DB)
-	chatH := handlers.NewChatHandler(d.DB, d.Ollama)
+	chatH := handlers.NewChatHandler(d.DB, d.Ollama, d.Sem)
 	adminChatH := handlers.NewAdminChatsHandler(d.DB)
 	sysH := handlers.NewSystemHandler(d.DB, d.Ollama)
+
+	loginLimit := middleware.PerIPRateLimiter(d.Cfg.LoginRateLimitPerMinute, max(d.Cfg.LoginRateLimitPerMinute, 5))
+	streamLimit := middleware.PerIPRateLimiter(d.Cfg.StreamRateLimitPerMinute, max(d.Cfg.StreamRateLimitPerMinute, 10))
 
 	api := r.Group("/api")
 
 	// Public
-	api.POST("/auth/login", authH.Login)
+	api.POST("/auth/login", loginLimit, authH.Login)
 	api.GET("/auth/google", authH.GoogleStart)
 	api.GET("/auth/google/callback", authH.GoogleCallback)
 	api.GET("/health", func(c *gin.Context) { c.JSON(200, gin.H{"ok": true}) })
@@ -62,7 +66,7 @@ func Register(r *gin.Engine, d Deps) {
 		authed.POST("/chats", chatH.Create)
 		authed.GET("/chats/:id", chatH.Get)
 		authed.DELETE("/chats/:id", chatH.Delete)
-		authed.POST("/chats/:id/stream", chatH.Stream)
+		authed.POST("/chats/:id/stream", streamLimit, chatH.Stream)
 	}
 
 	// Admin

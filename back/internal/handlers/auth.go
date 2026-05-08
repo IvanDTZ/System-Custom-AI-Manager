@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"log"
 	"net/http"
 	"net/url"
 
@@ -60,12 +61,14 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 
 func (h *AuthHandler) GoogleStart(c *gin.Context) {
 	if !h.google.IsConfigured() {
-		utils.Error(c, http.StatusServiceUnavailable, "google_not_configured", "Google OAuth is not configured")
+		log.Println("auth/google: not configured (set GOOGLE_CLIENT_ID/SECRET/REDIRECT_URL in .env)")
+		h.redirectWithStatus("error", "Google OAuth is not configured on the server", c)
 		return
 	}
 	u, err := h.google.AuthURL()
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "google_url", err.Error())
+		log.Printf("auth/google: build URL: %v", err)
+		h.redirectWithStatus("error", "Could not start Google sign-in", c)
 		return
 	}
 	c.Redirect(http.StatusFound, u)
@@ -73,17 +76,23 @@ func (h *AuthHandler) GoogleStart(c *gin.Context) {
 
 func (h *AuthHandler) GoogleCallback(c *gin.Context) {
 	if !h.google.IsConfigured() {
-		utils.Error(c, http.StatusServiceUnavailable, "google_not_configured", "Google OAuth is not configured")
+		h.redirectWithStatus("error", "Google OAuth is not configured on the server", c)
 		return
 	}
 	code := c.Query("code")
 	state := c.Query("state")
+	if e := c.Query("error"); e != "" {
+		log.Printf("auth/google: provider returned error=%s", e)
+		h.redirectWithStatus("error", "Google returned: "+e, c)
+		return
+	}
 	if code == "" || state == "" {
-		h.redirectWithStatus("error", "missing_params", c)
+		h.redirectWithStatus("error", "Missing code or state from Google", c)
 		return
 	}
 	user, err := h.google.HandleCallback(c.Request.Context(), code, state)
 	if err != nil {
+		log.Printf("auth/google: callback: %v", err)
 		h.redirectWithStatus("error", err.Error(), c)
 		return
 	}
@@ -93,6 +102,7 @@ func (h *AuthHandler) GoogleCallback(c *gin.Context) {
 	}
 	token, err := h.auth.IssueToken(user)
 	if err != nil {
+		log.Printf("auth/google: issue token: %v", err)
 		h.redirectWithStatus("error", err.Error(), c)
 		return
 	}

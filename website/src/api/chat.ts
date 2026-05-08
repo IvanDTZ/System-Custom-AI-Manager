@@ -25,6 +25,8 @@ export interface StreamHandlers {
   onToken: (chunk: string) => void
   onDone: (info: { chat_id: number; message_id: number }) => void
   onError: (message: string) => void
+  onQueued?: (position: number) => void
+  onReady?: () => void
 }
 
 /**
@@ -73,6 +75,11 @@ export function streamMessage(chatId: number, content: string, h: StreamHandlers
           if (event === 'token') {
             const p = payload as { content?: string }
             if (p.content) h.onToken(p.content)
+          } else if (event === 'queued') {
+            const p = payload as { position?: number }
+            h.onQueued?.(p.position ?? 1)
+          } else if (event === 'ready') {
+            h.onReady?.()
           } else if (event === 'done') {
             h.onDone(payload as { chat_id: number; message_id: number })
           } else if (event === 'error') {

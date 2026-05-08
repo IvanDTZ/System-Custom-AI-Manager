@@ -18,6 +18,14 @@ func main() {
 		log.Fatalf("database: %v", err)
 	}
 	oll := ollama.New(cfg.OllamaBaseURL)
+	sem := ollama.NewSemaphore(cfg.OllamaMaxConcurrency)
+
+	if cfg.IsGoogleOAuthConfigured() {
+		log.Printf("google oauth: configured (redirect=%s)", cfg.GoogleRedirectURL)
+	} else {
+		log.Printf("google oauth: NOT configured — fill GOOGLE_CLIENT_ID/SECRET/REDIRECT_URL in .env")
+	}
+	log.Printf("ollama: %s (max concurrency=%d)", cfg.OllamaBaseURL, cfg.OllamaMaxConcurrency)
 
 	if cfg.AppEnv == "production" {
 		gin.SetMode(gin.ReleaseMode)
@@ -28,7 +36,7 @@ func main() {
 		r.Use(gin.Logger())
 	}
 
-	routes.Register(r, routes.Deps{Cfg: cfg, DB: db, Ollama: oll})
+	routes.Register(r, routes.Deps{Cfg: cfg, DB: db, Ollama: oll, Sem: sem})
 
 	addr := ":" + cfg.Port
 	log.Printf("server listening on %s", addr)

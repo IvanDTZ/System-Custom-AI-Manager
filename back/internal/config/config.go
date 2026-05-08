@@ -34,7 +34,11 @@ type Config struct {
 	GoogleClientSecret string
 	GoogleRedirectURL  string
 
-	OllamaBaseURL string
+	OllamaBaseURL        string
+	OllamaMaxConcurrency int
+
+	LoginRateLimitPerMinute  int
+	StreamRateLimitPerMinute int
 }
 
 func Load() *Config {
@@ -58,7 +62,10 @@ func Load() *Config {
 		GoogleClientID:     getEnv("GOOGLE_CLIENT_ID", ""),
 		GoogleClientSecret: getEnv("GOOGLE_CLIENT_SECRET", ""),
 		GoogleRedirectURL:  getEnv("GOOGLE_REDIRECT_URL", "http://localhost:8080/api/auth/google/callback"),
-		OllamaBaseURL:      getEnv("OLLAMA_BASE_URL", "http://localhost:11434"),
+		OllamaBaseURL:            getEnv("OLLAMA_BASE_URL", "http://localhost:11434"),
+		OllamaMaxConcurrency:     getEnvInt("OLLAMA_MAX_CONCURRENCY", 2),
+		LoginRateLimitPerMinute:  getEnvInt("LOGIN_RATE_LIMIT_PER_MINUTE", 10),
+		StreamRateLimitPerMinute: getEnvInt("STREAM_RATE_LIMIT_PER_MINUTE", 30),
 	}
 
 	origins := getEnv("ALLOWED_ORIGINS", cfg.FrontendURL)

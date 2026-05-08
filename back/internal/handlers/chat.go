@@ -1,10 +1,13 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/ivan/aimanager/internal/middleware"
@@ -17,10 +20,20 @@ import (
 type ChatHandler struct {
 	db     *gorm.DB
 	ollama *ollama.Client
+	sem    *ollama.Semaphore
+
+	// One in-flight stream per user. New requests cancel the previous one.
+	streamMu      sync.Mutex
+	activeStreams map[uint]context.CancelFunc
 }
 
-func NewChatHandler(db *gorm.DB, oll *ollama.Client) *ChatHandler {
-	return &ChatHandler{db: db, ollama: oll}
+func NewChatHandler(db *gorm.DB, oll *ollama.Client, sem *ollama.Semaphore) *ChatHandler {
+	return &ChatHandler{
+		db:            db,
+		ollama:        oll,
+		sem:           sem,
+		activeStreams: make(map[uint]context.CancelFunc),
+	}
 }
 
 func (h *ChatHandler) List(c *gin.Context) {
@@ -82,27 +95,34 @@ type sendMessageReq struct {
 	Content string `json:"content" binding:"required"`
 }
 
-// Stream SSE: writes each token as it arrives from Ollama, persists user
-// message immediately and assistant message at the end.
+// Stream: SSE that sends each token from Ollama, persists messages and
+// heartbeats every 15 s so reverse proxies don't drop the connection.
+//
+// Concurrency model:
+//   - A counting semaphore limits how many streams can hit Ollama at once
+//     (OLLAMA_MAX_CONCURRENCY). Waiting clients receive a "queued" event
+//     with their position so the UI can show a queue indicator.
+//   - Each user can only have one active stream at a time; starting a new
+//     one cancels the previous one server-side.
 func (h *ChatHandler) Stream(c *gin.Context) {
 	chat, ok := h.findOwnedChat(c)
 	if !ok {
 		return
 	}
+	user := middleware.CurrentUser(c)
+
 	var req sendMessageReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		utils.Error(c, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
 
-	// Verify model is enabled.
 	var model models.AIModel
 	if err := h.db.Where("ollama_name = ? AND is_installed = ? AND is_enabled = ?", chat.ModelName, true, true).First(&model).Error; err != nil {
 		utils.Error(c, http.StatusBadRequest, "model_unavailable", "The selected model is not available")
 		return
 	}
 
-	// Persist user message.
 	userMsg := models.ChatMessage{
 		ChatID:  chat.ID,
 		Role:    models.MessageRoleUser,
@@ -113,7 +133,6 @@ func (h *ChatHandler) Stream(c *gin.Context) {
 		return
 	}
 
-	// Auto-title if this is the first user message.
 	if strings.EqualFold(chat.Title, "New chat") {
 		t := req.Content
 		if len(t) > 60 {
@@ -122,7 +141,74 @@ func (h *ChatHandler) Stream(c *gin.Context) {
 		h.db.Model(chat).Update("title", t)
 	}
 
-	// Build the conversation history.
+	// Per-user single-stream guard.
+	streamCtx, cancel := context.WithCancel(c.Request.Context())
+	defer cancel()
+	h.streamMu.Lock()
+	if prev, ok := h.activeStreams[user.ID]; ok {
+		prev()
+	}
+	h.activeStreams[user.ID] = cancel
+	h.streamMu.Unlock()
+	defer func() {
+		h.streamMu.Lock()
+		if cur, ok := h.activeStreams[user.ID]; ok && &cur == &cancel {
+			delete(h.activeStreams, user.ID)
+		}
+		h.streamMu.Unlock()
+	}()
+
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	c.Writer.Header().Set("Cache-Control", "no-cache, no-transform")
+	c.Writer.Header().Set("Connection", "keep-alive")
+	c.Writer.Header().Set("X-Accel-Buffering", "no")
+	flusher, _ := c.Writer.(http.Flusher)
+	writeEvent := func(event string, payload any) {
+		b, _ := json.Marshal(payload)
+		c.Writer.Write([]byte("event: " + event + "\ndata: "))
+		c.Writer.Write(b)
+		c.Writer.Write([]byte("\n\n"))
+		if flusher != nil {
+			flusher.Flush()
+		}
+	}
+
+	// Heartbeat: comment line every 15 s while we're waiting / streaming.
+	hbCtx, stopHB := context.WithCancel(streamCtx)
+	defer stopHB()
+	go func() {
+		t := time.NewTicker(15 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-hbCtx.Done():
+				return
+			case <-t.C:
+				_, err := c.Writer.Write([]byte(": ping\n\n"))
+				if err != nil {
+					return
+				}
+				if flusher != nil {
+					flusher.Flush()
+				}
+			}
+		}
+	}()
+
+	// Acquire a slot. Notify the client of its queue position.
+	if h.sem != nil {
+		_, inFlight, pending := h.sem.Stats()
+		if inFlight >= int64(chatSemCap(h.sem)) || pending > 0 {
+			writeEvent("queued", gin.H{"position": pending + 1})
+		}
+	}
+	if err := h.sem.Acquire(streamCtx); err != nil {
+		writeEvent("error", gin.H{"error": "request cancelled"})
+		return
+	}
+	defer h.sem.Release()
+	writeEvent("ready", gin.H{})
+
 	var history []models.ChatMessage
 	h.db.Where("chat_id = ?", chat.ID).Order("created_at ASC").Find(&history)
 	ollamaMsgs := make([]ollama.ChatMessage, 0, len(history))
@@ -130,37 +216,32 @@ func (h *ChatHandler) Stream(c *gin.Context) {
 		ollamaMsgs = append(ollamaMsgs, ollama.ChatMessage{Role: m.Role, Content: m.Content})
 	}
 
-	// SSE headers.
-	c.Writer.Header().Set("Content-Type", "text/event-stream")
-	c.Writer.Header().Set("Cache-Control", "no-cache")
-	c.Writer.Header().Set("Connection", "keep-alive")
-	c.Writer.Header().Set("X-Accel-Buffering", "no")
-	flusher, _ := c.Writer.(http.Flusher)
-
 	var sb strings.Builder
-	err := h.ollama.ChatStream(c.Request.Context(),
+	err := h.ollama.ChatStream(streamCtx,
 		ollama.ChatRequest{Model: chat.ModelName, Messages: ollamaMsgs},
 		func(chunk ollama.ChatChunk) bool {
 			if chunk.Message.Content != "" {
 				sb.WriteString(chunk.Message.Content)
-				b, _ := json.Marshal(gin.H{"content": chunk.Message.Content})
-				c.Writer.Write([]byte("event: token\ndata: "))
-				c.Writer.Write(b)
-				c.Writer.Write([]byte("\n\n"))
-				if flusher != nil {
-					flusher.Flush()
-				}
+				writeEvent("token", gin.H{"content": chunk.Message.Content})
 			}
 			return true
 		})
-	if err != nil {
-		b, _ := json.Marshal(gin.H{"error": err.Error()})
-		c.Writer.Write([]byte("event: error\ndata: "))
-		c.Writer.Write(b)
-		c.Writer.Write([]byte("\n\n"))
-		if flusher != nil {
-			flusher.Flush()
+	stopHB()
+
+	// If the client dropped, persist what we have so the chat history isn't lost.
+	if streamCtx.Err() != nil {
+		if sb.Len() > 0 {
+			h.db.Create(&models.ChatMessage{
+				ChatID:    chat.ID,
+				Role:      models.MessageRoleAssistant,
+				Content:   sb.String(),
+				ModelName: chat.ModelName,
+			})
 		}
+		return
+	}
+	if err != nil {
+		writeEvent("error", gin.H{"error": err.Error()})
 		return
 	}
 
@@ -173,13 +254,7 @@ func (h *ChatHandler) Stream(c *gin.Context) {
 	h.db.Create(&assistantMsg)
 	h.db.Model(chat).Update("updated_at", gorm.Expr("CURRENT_TIMESTAMP"))
 
-	b, _ := json.Marshal(gin.H{"chat_id": chat.ID, "message_id": assistantMsg.ID})
-	c.Writer.Write([]byte("event: done\ndata: "))
-	c.Writer.Write(b)
-	c.Writer.Write([]byte("\n\n"))
-	if flusher != nil {
-		flusher.Flush()
-	}
+	writeEvent("done", gin.H{"chat_id": chat.ID, "message_id": assistantMsg.ID})
 }
 
 func (h *ChatHandler) findOwnedChat(c *gin.Context) (*models.Chat, bool) {
@@ -199,4 +274,10 @@ func (h *ChatHandler) findOwnedChat(c *gin.Context) (*models.Chat, bool) {
 		return nil, false
 	}
 	return &chat, true
+}
+
+// chatSemCap exists to access the unexported cap of the semaphore.
+func chatSemCap(s *ollama.Semaphore) int {
+	cap, _, _ := s.Stats()
+	return cap
 }

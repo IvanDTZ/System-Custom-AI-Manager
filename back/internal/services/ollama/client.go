@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -17,11 +18,31 @@ type Client struct {
 	http    *http.Client
 }
 
+// sharedTransport is reused across all *Client instances so HTTP/1.1
+// keep-alives are pooled across concurrent requests. The defaults of
+// http.DefaultTransport are too conservative when many users stream at once.
+var sharedTransport = &http.Transport{
+	Proxy: http.ProxyFromEnvironment,
+	DialContext: (&net.Dialer{
+		Timeout:   5 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}).DialContext,
+	ForceAttemptHTTP2:     true,
+	MaxIdleConns:          64,
+	MaxIdleConnsPerHost:   32,
+	IdleConnTimeout:       90 * time.Second,
+	TLSHandshakeTimeout:   5 * time.Second,
+	ExpectContinueTimeout: 1 * time.Second,
+	// Disable response buffering for streamed bodies.
+	DisableCompression: true,
+}
+
 func New(baseURL string) *Client {
 	return &Client{
 		baseURL: strings.TrimRight(baseURL, "/"),
 		http: &http.Client{
-			Timeout: 0, // no timeout: streaming + pulls can be long
+			Transport: sharedTransport,
+			Timeout:   0, // no timeout: streaming + pulls can be long
 		},
 	}
 }
