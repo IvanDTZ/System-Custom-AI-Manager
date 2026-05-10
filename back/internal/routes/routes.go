@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"strings"
 	"time"
 
 	"github.com/gin-contrib/cors"
@@ -21,9 +22,53 @@ type Deps struct {
 	Sem    *ollama.Semaphore
 }
 
+// originMatcher returns a function that decides whether a CORS Origin is
+// allowed. Each entry in cfg.AllowedOrigins is either an exact match
+// ("https://example.com") or a suffix wildcard ("https://*.ngrok-free.dev",
+// matches any subdomain). Empty list → allow nothing.
+func originMatcher(allowed []string) func(string) bool {
+	exact := make(map[string]bool, len(allowed))
+	suffixes := make([]string, 0)
+	for _, raw := range allowed {
+		o := strings.TrimSpace(raw)
+		if o == "" {
+			continue
+		}
+		if i := strings.Index(o, "*."); i >= 0 {
+			// "https://*.ngrok-free.dev" → suffix "://" + ".ngrok-free.dev"
+			scheme := o[:i]
+			rest := o[i+1:] // ".ngrok-free.dev"
+			suffixes = append(suffixes, scheme+rest)
+		} else {
+			exact[o] = true
+		}
+	}
+	return func(origin string) bool {
+		if origin == "" {
+			return false
+		}
+		if exact[origin] {
+			return true
+		}
+		for _, suf := range suffixes {
+			// match scheme prefix and host suffix: e.g. "https://" + "x.ngrok-free.dev"
+			schemeEnd := strings.Index(suf, "://")
+			if schemeEnd < 0 {
+				continue
+			}
+			scheme := suf[:schemeEnd+3]
+			hostSuffix := suf[schemeEnd+3:]
+			if strings.HasPrefix(origin, scheme) && strings.HasSuffix(origin, hostSuffix) {
+				return true
+			}
+		}
+		return false
+	}
+}
+
 func Register(r *gin.Engine, d Deps) {
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     d.Cfg.AllowedOrigins,
+		AllowOriginFunc:  originMatcher(d.Cfg.AllowedOrigins),
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
 		ExposeHeaders:    []string{"Content-Length"},
