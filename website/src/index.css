@@ -49,6 +49,19 @@ body {
   100% { transform: translateX(400%); }
 }
 
+/* Smooth blinking cursor for streaming chat — eased instead of stepped, so
+   the cursor never feels jittery when text shifts under it. */
+@keyframes caret-blink {
+  0%, 45% { opacity: 0.85; }
+  60%, 100% { opacity: 0.15; }
+}
+
+/* Soft entry for the live assistant bubble. Cheap and runs once. */
+@keyframes message-rise {
+  0% { opacity: 0; transform: translateY(6px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
 /* Glass primitive used by `card` className */
 @utility card {
   background: var(--color-surface);

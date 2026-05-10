@@ -175,11 +175,14 @@ func (h *ChatHandler) Stream(c *gin.Context) {
 		}
 	}
 
-	// Heartbeat: comment line every 15 s while we're waiting / streaming.
+	// Heartbeat: SSE comment every 5 s while we're queued, loading the model,
+	// or streaming. Ngrok-free closes idle tunnels at ~60 s, Nginx defaults
+	// to 60 s proxy_read_timeout, Cloudflare to 100 s. 5 s keeps us well
+	// under all of them, with negligible bandwidth cost (a few bytes / tick).
 	hbCtx, stopHB := context.WithCancel(streamCtx)
 	defer stopHB()
 	go func() {
-		t := time.NewTicker(15 * time.Second)
+		t := time.NewTicker(5 * time.Second)
 		defer t.Stop()
 		for {
 			select {

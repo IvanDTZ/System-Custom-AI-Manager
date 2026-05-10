@@ -30,6 +30,10 @@ export default function ChatPage() {
   const stream = useStream()
   const scrollerRef = useRef<HTMLDivElement | null>(null)
   const userScrolledUpRef = useRef(false)
+  // The id of the chat we last fetched. Used to short-circuit the load effect
+  // when we ourselves just created a chat (and have an in-flight stream into
+  // it) — otherwise the route change would re-fetch and tear the stream down.
+  const loadedChatIdRef = useRef<number | null>(null)
 
   const refreshChats = useCallback(async () => {
     try {
@@ -41,8 +45,18 @@ export default function ChatPage() {
   useEffect(() => { refreshChats() }, [refreshChats])
 
   useEffect(() => {
-    if (!idParam) { setChat(null); setMessages([]); stream.reset(); return }
+    if (!idParam) {
+      setChat(null); setMessages([]); stream.reset()
+      loadedChatIdRef.current = null
+      return
+    }
     const id = Number(idParam)
+    // We just created this chat locally and are mid-stream. Don't re-fetch —
+    // it would replace `messages` with the server-side snapshot (without the
+    // optimistic user message) and `stream.reset()` would abort the in-flight
+    // SSE we just kicked off.
+    if (loadedChatIdRef.current === id) return
+    loadedChatIdRef.current = id
     chatApi.getChat(id).then(({ chat }) => {
       setChat(chat)
       setMessages(chat.messages ?? [])
@@ -104,6 +118,10 @@ export default function ChatPage() {
       const { chat: created } = await chatApi.createChat(model, 'New chat')
       activeChat = created
       setChat(created)
+      // Mark as already-loaded BEFORE navigating, so the load effect that
+      // fires on idParam change skips the re-fetch and leaves our pending
+      // stream alone.
+      loadedChatIdRef.current = created.id
       nav(`/chat/${created.id}`, { replace: true })
     }
 

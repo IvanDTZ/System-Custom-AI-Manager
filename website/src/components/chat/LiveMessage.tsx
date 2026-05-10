@@ -16,7 +16,7 @@ export const LiveMessage = memo(function LiveMessage({
   hint?: string
 }) {
   return (
-    <div className="flex w-full">
+    <div className="flex w-full animate-[message-rise_280ms_ease-out]">
       <div className="flex w-full max-w-3xl flex-col gap-1.5">
         <div className="flex items-center gap-2 text-[11px] text-text-subtle">
           <span className="size-1.5 rounded-full bg-emerald-400/80" />
@@ -26,15 +26,21 @@ export const LiveMessage = memo(function LiveMessage({
           {hint && <span className="text-text-muted">· {hint}</span>}
         </div>
         {text ? (
-          <>
+          <div className="relative">
             <Markdown content={text} />
-            <span className="inline-block h-4 w-1.5 animate-pulse bg-white/60 align-middle" />
-          </>
+            {/* Inline caret right after the last character. transform-gpu
+                avoids subpixel rendering wobble while the text shifts under
+                it. */}
+            <span
+              aria-hidden
+              className="ml-0.5 inline-block h-[1em] w-[2px] translate-y-[2px] transform-gpu animate-[caret-blink_900ms_ease-in-out_infinite] bg-white/80 align-middle"
+            />
+          </div>
         ) : (
           <div className="flex items-center gap-2 py-1 text-sm text-text-muted">
-            <span className="size-1.5 animate-pulse rounded-full bg-white/40" />
-            <span className="size-1.5 animate-pulse rounded-full bg-white/40 [animation-delay:120ms]" />
-            <span className="size-1.5 animate-pulse rounded-full bg-white/40 [animation-delay:240ms]" />
+            <span className="size-1.5 animate-[caret-blink_900ms_ease-in-out_infinite] rounded-full bg-white/40" />
+            <span className="size-1.5 animate-[caret-blink_900ms_ease-in-out_infinite] rounded-full bg-white/40 [animation-delay:140ms]" />
+            <span className="size-1.5 animate-[caret-blink_900ms_ease-in-out_infinite] rounded-full bg-white/40 [animation-delay:280ms]" />
           </div>
         )}
       </div>

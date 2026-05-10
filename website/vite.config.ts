@@ -19,6 +19,12 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:8080',
         changeOrigin: true,
+        // Streaming chat replies (SSE) and `ollama pull` events stay open for
+        // minutes. Both timeouts default to 120s in http-proxy — disable them
+        // so the proxy never closes a slow inference response mid-stream.
+        timeout: 0,
+        proxyTimeout: 0,
+        ws: true,
       },
     },
   },
