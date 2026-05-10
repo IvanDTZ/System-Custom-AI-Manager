@@ -16,7 +16,7 @@ export async function uninstallModel(name: string): Promise<{ ok: boolean }> {
 // forgetModel removes the row from our DB without touching Ollama. Only works
 // for already-uninstalled models — used to clean stale entries.
 export async function forgetModel(id: number): Promise<{ ok: boolean }> {
-  return request(`/admin/models/db/${id}`, { method: 'DELETE' })
+  return request(`/admin/models/${id}/forget`, { method: 'POST' })
 }
 
 export async function updateModel(id: number, input: {

@@ -49,10 +49,32 @@ export async function request<T = unknown>(path: string, opts: RequestOptions = 
   }
 
   const text = await res.text()
-  const data = text ? JSON.parse(text) : {}
+  let data: { error?: { code?: string; message?: string } } & Record<string, unknown> = {}
+  if (text.trim()) {
+    try {
+      data = JSON.parse(text)
+    } catch {
+      // The body is not clean JSON. Most common causes:
+      //   - Backend running an old binary (route not registered → "404 page not found")
+      //   - Two responses concatenated (handler wrote twice — bug)
+      //   - Nginx / proxy injected an HTML error page
+      // Surface the raw body so we can diagnose instead of dying with "position 4".
+      if (import.meta.env.DEV) {
+        console.error(`[api] non-JSON response for ${opts.method ?? 'GET'} /api${path}\nstatus: ${res.status}\nbody:`, text)
+      }
+      const snippet = text.length > 160 ? text.slice(0, 160) + '…' : text
+      throw new ApiError(
+        res.status || 500,
+        'invalid_response',
+        res.ok
+          ? `Server returned an unexpected response. Try restarting the backend. (got: ${snippet})`
+          : `HTTP ${res.status}: ${snippet}`,
+      )
+    }
+  }
 
   if (!res.ok) {
-    const err = data?.error
+    const err = data.error
     throw new ApiError(
       res.status,
       err?.code ?? 'unknown_error',
