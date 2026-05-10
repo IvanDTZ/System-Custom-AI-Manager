@@ -3,7 +3,8 @@ import { useNavigate, useParams } from 'react-router-dom'
 import * as chatApi from '../api/chat'
 import { confirm, notify } from '../components/ui/dialogs'
 import type { Chat as ChatT, ChatMessage } from '../types'
-import { Shell } from '../components/layout/Shell'
+import { Shell, SidebarTrigger } from '../components/layout/Shell'
+import { SidebarProvider } from '../contexts/SidebarContext'
 import { ChatSidebar } from '../components/chat/ChatSidebar'
 import { Composer } from '../components/chat/Composer'
 import { Message } from '../components/chat/Message'
@@ -163,6 +164,7 @@ export default function ChatPage() {
       : undefined
 
   return (
+    <SidebarProvider>
     <Shell
       sidebar={
         <ChatSidebar
@@ -174,8 +176,9 @@ export default function ChatPage() {
       }
     >
       <div className="flex h-full flex-col">
-        <header className="flex items-center justify-between border-b border-white/[0.06] px-6 py-3">
-          <div className="text-sm font-medium text-text-muted">
+        <header className="flex items-center gap-2 border-b border-white/[0.06] px-3 py-2 sm:px-6 sm:py-3">
+          <SidebarTrigger />
+          <div className="min-w-0 flex-1 truncate text-sm font-medium text-text-muted">
             {chat?.title || 'New conversation'}
           </div>
           <ModelPicker value={model} onChange={setModel} />
@@ -183,7 +186,7 @@ export default function ChatPage() {
 
         <div ref={scrollerRef} className="flex-1 overflow-y-auto">
           {empty ? (
-            <div className="mx-auto flex h-full max-w-3xl flex-col items-center justify-center px-6 py-10">
+            <div className="mx-auto flex h-full max-w-3xl flex-col items-center justify-center px-4 py-8 sm:px-6 sm:py-10">
               <img src="/Logo.png" alt="AI Manager" className="size-36 rounded-3xl object-contain shadow-2xl sm:size-44 md:size-52" />
               <h1 className="mt-6 text-3xl font-semibold tracking-tight">How can I help today?</h1>
 
@@ -222,7 +225,7 @@ export default function ChatPage() {
               )}
             </div>
           ) : (
-            <div className="mx-auto flex max-w-3xl flex-col gap-7 px-6 py-8">
+            <div className="mx-auto flex max-w-3xl flex-col gap-6 px-3 py-6 sm:gap-7 sm:px-6 sm:py-8">
               {messages.map(m => <Message key={m.id} message={m} />)}
               {showLive && (
                 <LiveMessage text={stream.text} modelName={model} hint={liveHint} />
@@ -236,12 +239,13 @@ export default function ChatPage() {
           )}
         </div>
 
-        <div className="px-6 pb-6 pt-3">
+        <div className="px-3 pb-4 pt-3 sm:px-6 sm:pb-6">
           <Composer
             onSend={handleSend}
             onStop={handleStop}
             streaming={isStreaming}
             disabled={!model}
+            currentModel={model}
           />
           {!model && (
             <div className="mx-auto mt-2 max-w-3xl text-center text-xs text-amber-300/80">
@@ -251,5 +255,6 @@ export default function ChatPage() {
         </div>
       </div>
     </Shell>
+    </SidebarProvider>
   )
 }

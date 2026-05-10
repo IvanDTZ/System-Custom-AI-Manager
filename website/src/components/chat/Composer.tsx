@@ -10,6 +10,7 @@ import {
   readFileAsText,
   type ExtractResult,
 } from '../../utils/extractText'
+import { isVisionModel } from '../../utils/visionModels'
 
 const ACCEPTED = [
   'image/*',
@@ -48,11 +49,13 @@ export function Composer({
   onStop,
   disabled,
   streaming,
+  currentModel,
 }: {
   onSend: (payload: ComposerSendPayload) => void
   onStop?: () => void
   disabled?: boolean
   streaming?: boolean
+  currentModel?: string
 }) {
   const [value, setValue] = useState('')
   const [attachments, setAttachments] = useState<Attachment[]>([])
@@ -74,6 +77,8 @@ export function Composer({
   }, [])
 
   const stillReading = attachments.some(a => a.status === 'reading')
+  const hasImages = attachments.some(a => a.kind === 'image' && a.status === 'ready')
+  const visionMismatch = hasImages && !!currentModel && !isVisionModel(currentModel)
   const canSend = !disabled && !stillReading && (value.trim().length > 0 || attachments.length > 0)
 
   function send() {
@@ -182,6 +187,21 @@ export function Composer({
 
   return (
     <div className="mx-auto w-full max-w-3xl">
+      {visionMismatch && (
+        <div className="mb-2 flex items-start gap-2 rounded-xl border border-amber-300/30 bg-amber-300/[0.06] px-3 py-2 text-xs text-amber-200">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mt-0.5 size-4 shrink-0">
+            <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
+            <line x1="12" x2="12" y1="9" y2="13" />
+            <line x1="12" x2="12.01" y1="17" y2="17" />
+          </svg>
+          <div>
+            <span className="font-medium text-amber-100">{currentModel}</span> doesn't support images. The text in your message will reach the model, but images will be ignored.
+            <div className="mt-0.5 text-[11px] text-amber-200/80">
+              Install a vision model from <span className="font-medium">Admin → Models</span> (e.g. <code className="rounded bg-white/10 px-1">llava:7b</code>) and switch to it in the model picker.
+            </div>
+          </div>
+        </div>
+      )}
       <div className="relative rounded-2xl border border-white/10 bg-white/[0.04] p-2 backdrop-blur-xl shadow-[0_30px_60px_-30px_rgba(0,0,0,0.6)]">
         {attachments.length > 0 && (
           <div className="flex flex-wrap gap-2 px-2 pb-2 pt-1">

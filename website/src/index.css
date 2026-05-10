@@ -43,6 +43,12 @@ body {
     var(--color-app);
 }
 
+/* Marquee for indeterminate <ProgressBar> */
+@keyframes progress-marquee {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+
 /* Glass primitive used by `card` className */
 @utility card {
   background: var(--color-surface);

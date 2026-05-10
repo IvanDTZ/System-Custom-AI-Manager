@@ -31,8 +31,11 @@ export interface AIModel {
   ollama_name: string
   display_name: string
   description: string
+  // category_id / category are kept for backwards compat — they hold the
+  // first selected category. New code should read `categories` (multi).
   category_id?: number | null
   category?: Category | null
+  categories?: Category[]
   is_installed: boolean
   is_enabled: boolean
   size: number

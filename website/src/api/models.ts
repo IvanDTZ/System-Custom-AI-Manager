@@ -19,10 +19,29 @@ export async function forgetModel(id: number): Promise<{ ok: boolean }> {
   return request(`/admin/models/${id}/forget`, { method: 'POST' })
 }
 
+// InstallEntry mirrors back/internal/services/ollama.InstallEntry so we can
+// render every in-flight `ollama pull`, even those started by other admins.
+export interface InstallEntry {
+  name: string
+  status: 'installing' | 'done' | 'error'
+  latest: string
+  total: number
+  completed: number
+  error?: string
+  started_at: string
+  updated_at: string
+  started_by: number
+}
+
+export async function listInstalls(): Promise<{ installs: InstallEntry[] }> {
+  return request('/admin/models/installs')
+}
+
 export async function updateModel(id: number, input: {
   display_name?: string
   description?: string
   category_id?: number | null
+  category_ids?: number[]
   is_enabled?: boolean
 }): Promise<{ model: AIModel }> {
   return request(`/admin/models/${id}`, { method: 'PATCH', body: input })

@@ -19,6 +19,7 @@ func main() {
 	}
 	oll := ollama.New(cfg.OllamaBaseURL)
 	sem := ollama.NewSemaphore(cfg.OllamaMaxConcurrency)
+	installs := ollama.NewInstallTracker()
 
 	if cfg.IsGoogleOAuthConfigured() {
 		log.Printf("google oauth: configured (redirect=%s)", cfg.GoogleRedirectURL)
@@ -36,7 +37,7 @@ func main() {
 		r.Use(gin.Logger())
 	}
 
-	routes.Register(r, routes.Deps{Cfg: cfg, DB: db, Ollama: oll, Sem: sem})
+	routes.Register(r, routes.Deps{Cfg: cfg, DB: db, Ollama: oll, Sem: sem, Installs: installs})
 
 	addr := ":" + cfg.Port
 	log.Printf("server listening on %s", addr)

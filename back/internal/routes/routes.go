@@ -16,10 +16,11 @@ import (
 )
 
 type Deps struct {
-	Cfg    *config.Config
-	DB     *gorm.DB
-	Ollama *ollama.Client
-	Sem    *ollama.Semaphore
+	Cfg      *config.Config
+	DB       *gorm.DB
+	Ollama   *ollama.Client
+	Sem      *ollama.Semaphore
+	Installs *ollama.InstallTracker
 }
 
 // originMatcher returns a function that decides whether a CORS Origin is
@@ -81,7 +82,7 @@ func Register(r *gin.Engine, d Deps) {
 
 	authH := handlers.NewAuthHandler(d.Cfg, auth, google)
 	usersH := handlers.NewAdminUsersHandler(d.DB)
-	modelsH := handlers.NewModelsHandler(d.DB, d.Ollama)
+	modelsH := handlers.NewModelsHandler(d.DB, d.Ollama, d.Installs)
 	catsH := handlers.NewCategoriesHandler(d.DB)
 	chatH := handlers.NewChatHandler(d.DB, d.Ollama, d.Sem)
 	adminChatH := handlers.NewAdminChatsHandler(d.DB)
@@ -127,6 +128,7 @@ func Register(r *gin.Engine, d Deps) {
 		admin.POST("/users/:id/reset-password", usersH.ResetPassword)
 
 		admin.GET("/models", modelsH.AdminList)
+		admin.GET("/models/installs", modelsH.Installs)
 		admin.POST("/models/sync", modelsH.Sync)
 		admin.POST("/models/install", modelsH.Install)
 		admin.POST("/models/:id/forget", modelsH.Forget)

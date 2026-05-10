@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"github.com/ivan/aimanager/internal/middleware"
 	"github.com/ivan/aimanager/internal/models"
 	"github.com/ivan/aimanager/internal/services/ollama"
 	"github.com/ivan/aimanager/internal/utils"
@@ -13,18 +14,19 @@ import (
 )
 
 type ModelsHandler struct {
-	db     *gorm.DB
-	ollama *ollama.Client
+	db       *gorm.DB
+	ollama   *ollama.Client
+	installs *ollama.InstallTracker
 }
 
-func NewModelsHandler(db *gorm.DB, oll *ollama.Client) *ModelsHandler {
-	return &ModelsHandler{db: db, ollama: oll}
+func NewModelsHandler(db *gorm.DB, oll *ollama.Client, installs *ollama.InstallTracker) *ModelsHandler {
+	return &ModelsHandler{db: db, ollama: oll, installs: installs}
 }
 
 // PublicList returns models that the regular user can pick (installed + enabled).
 func (h *ModelsHandler) PublicList(c *gin.Context) {
 	var rows []models.AIModel
-	if err := h.db.Preload("Category").
+	if err := h.db.Preload("Category").Preload("Categories").
 		Where("is_installed = ? AND is_enabled = ?", true, true).
 		Order("display_name ASC").
 		Find(&rows).Error; err != nil {
@@ -37,7 +39,7 @@ func (h *ModelsHandler) PublicList(c *gin.Context) {
 // AdminList returns every model in the DB.
 func (h *ModelsHandler) AdminList(c *gin.Context) {
 	var rows []models.AIModel
-	if err := h.db.Preload("Category").Order("ollama_name ASC").Find(&rows).Error; err != nil {
+	if err := h.db.Preload("Category").Preload("Categories").Order("ollama_name ASC").Find(&rows).Error; err != nil {
 		utils.Error(c, http.StatusInternalServerError, "db_error", err.Error())
 		return
 	}
@@ -100,12 +102,31 @@ type installReq struct {
 	Name string `json:"name" binding:"required"`
 }
 
-// Install streams pull progress as SSE.
+// Install streams pull progress as SSE. Also publishes progress to the
+// shared InstallTracker so other admins polling /admin/models/installs see
+// the same state, and so we can refuse a duplicate pull on the same model.
 func (h *ModelsHandler) Install(c *gin.Context) {
 	var req installReq
 	if !utils.BindJSON(c, &req) {
 		return
 	}
+
+	// Refuse if another admin is already pulling the same model. Avoids two
+	// fetches stomping on each other's progress and Ollama spawning duplicate
+	// downloads.
+	user := middleware.CurrentUser(c)
+	var startedByID uint
+	if user != nil {
+		startedByID = user.ID
+	}
+	if h.installs != nil {
+		if _, ok := h.installs.Start(req.Name, startedByID); !ok {
+			utils.Error(c, http.StatusConflict, "install_in_progress",
+				"This model is already being installed by another admin. Watch progress in the bar at the top.")
+			return
+		}
+	}
+
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
@@ -113,6 +134,9 @@ func (h *ModelsHandler) Install(c *gin.Context) {
 	flusher, _ := c.Writer.(http.Flusher)
 
 	err := h.ollama.Pull(c.Request.Context(), req.Name, func(ev ollama.PullProgress) bool {
+		if h.installs != nil {
+			h.installs.Update(req.Name, ev.Status, ev.Total, ev.Completed)
+		}
 		b, _ := json.Marshal(ev)
 		c.Writer.Write([]byte("event: progress\ndata: "))
 		c.Writer.Write(b)
@@ -123,6 +147,9 @@ func (h *ModelsHandler) Install(c *gin.Context) {
 		return true
 	})
 	if err != nil {
+		if h.installs != nil {
+			h.installs.Error(req.Name, err.Error())
+		}
 		b, _ := json.Marshal(gin.H{"error": err.Error()})
 		c.Writer.Write([]byte("event: error\ndata: "))
 		c.Writer.Write(b)
@@ -160,10 +187,24 @@ func (h *ModelsHandler) Install(c *gin.Context) {
 			}
 		}
 	}
+	if h.installs != nil {
+		h.installs.Done(req.Name)
+	}
 	c.Writer.Write([]byte("event: done\ndata: {}\n\n"))
 	if flusher != nil {
 		flusher.Flush()
 	}
+}
+
+// Installs returns a snapshot of every Ollama pull currently in flight on the
+// server. Any admin can poll this — that's how a second admin sees that the
+// first is already downloading something.
+func (h *ModelsHandler) Installs(c *gin.Context) {
+	if h.installs == nil {
+		c.JSON(http.StatusOK, gin.H{"installs": []ollama.InstallEntry{}})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"installs": h.installs.List()})
 }
 
 func (h *ModelsHandler) Uninstall(c *gin.Context) {
@@ -206,6 +247,10 @@ type updateModelReq struct {
 	DisplayName *string `json:"display_name"`
 	Description *string `json:"description"`
 	CategoryID  *uint   `json:"category_id"`
+	// CategoryIDs replaces the model's whole category set when present.
+	// Use this for the multi-select admin UI; CategoryID stays as the
+	// "primary" category for legacy callers.
+	CategoryIDs *[]uint `json:"category_ids"`
 	IsEnabled   *bool   `json:"is_enabled"`
 }
 
@@ -240,6 +285,28 @@ func (h *ModelsHandler) Update(c *gin.Context) {
 	if len(updates) > 0 {
 		h.db.Model(&m).Updates(updates)
 	}
-	h.db.Preload("Category").First(&m, m.ID)
+
+	// Replace the many-to-many association if category_ids was sent.
+	if req.CategoryIDs != nil {
+		ids := *req.CategoryIDs
+		newCats := make([]models.ModelCategory, 0, len(ids))
+		for _, cid := range ids {
+			newCats = append(newCats, models.ModelCategory{ID: cid})
+		}
+		if err := h.db.Model(&m).Association("Categories").Replace(newCats); err != nil {
+			code, msg := utils.HumanizeDBError(err)
+			utils.Error(c, http.StatusBadRequest, code, msg)
+			return
+		}
+		// Keep legacy CategoryID in sync with the first selected category so
+		// older readers still work.
+		var firstID *uint
+		if len(ids) > 0 {
+			firstID = &ids[0]
+		}
+		h.db.Model(&m).Update("category_id", firstID)
+	}
+
+	h.db.Preload("Category").Preload("Categories").First(&m, m.ID)
 	c.JSON(http.StatusOK, gin.H{"model": m})
 }
