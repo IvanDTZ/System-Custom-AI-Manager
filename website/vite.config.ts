@@ -11,6 +11,10 @@ export default defineConfig({
     tailwindcss(),
   ],
   server: {
+    // Accept any Host header (ngrok tunnels, LAN hostnames, custom domains).
+    // Vite blocks unknown hosts by default as a CSRF defence — fine in pure
+    // local dev, but breaks the moment we expose the dev server.
+    allowedHosts: true,
     proxy: {
       '/api': {
         target: 'http://localhost:8080',
