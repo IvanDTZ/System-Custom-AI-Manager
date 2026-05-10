@@ -30,8 +30,7 @@ type loginReq struct {
 
 func (h *AuthHandler) Login(c *gin.Context) {
 	var req loginReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.Error(c, http.StatusBadRequest, "bad_request", "Invalid payload")
+	if !utils.BindJSON(c, &req) {
 		return
 	}
 	user, token, err := h.auth.Login(req.Identifier, req.Password)

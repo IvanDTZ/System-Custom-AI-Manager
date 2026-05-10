@@ -6,8 +6,27 @@ export function Message({ message, streaming }: { message: ChatMessage; streamin
   if (isUser) {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[80%] rounded-2xl rounded-br-md border border-white/10 bg-white/[0.06] px-4 py-3 text-[15px] leading-relaxed">
-          {message.content}
+        <div className="flex max-w-[80%] flex-col gap-2 rounded-2xl rounded-br-md border border-white/10 bg-white/[0.06] px-4 py-3 text-[15px] leading-relaxed">
+          {message.images && message.images.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {message.images.map((b64, i) => (
+                <a
+                  key={i}
+                  href={`data:image/*;base64,${b64}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="block overflow-hidden rounded-lg border border-white/10"
+                >
+                  <img
+                    src={`data:image/*;base64,${b64}`}
+                    alt={`attachment ${i + 1}`}
+                    className="max-h-64 max-w-full object-contain"
+                  />
+                </a>
+              ))}
+            </div>
+          )}
+          {message.content && <span className="whitespace-pre-wrap break-words">{message.content}</span>}
         </div>
       </div>
     )

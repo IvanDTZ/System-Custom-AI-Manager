@@ -159,8 +159,11 @@ func (c *Client) Delete(ctx context.Context, name string) error {
 // --- /api/chat (stream) -----------------------------------------------------
 
 type ChatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role    string   `json:"role"`
+	Content string   `json:"content"`
+	// Images are base64-encoded payloads (no data URL prefix). Only sent when
+	// non-empty; vision-capable models (llava, llama3.2-vision, etc.) consume them.
+	Images []string `json:"images,omitempty"`
 }
 
 type ChatRequest struct {

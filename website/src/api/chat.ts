@@ -33,7 +33,7 @@ export interface StreamHandlers {
  * POSTs a chat message with SSE streaming. Returns an AbortController so the
  * caller can cancel.
  */
-export function streamMessage(chatId: number, content: string, h: StreamHandlers): AbortController {
+export function streamMessage(chatId: number, content: string, h: StreamHandlers, images?: string[]): AbortController {
   const ctrl = new AbortController()
   ;(async () => {
     try {
@@ -45,7 +45,7 @@ export function streamMessage(chatId: number, content: string, h: StreamHandlers
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify(images && images.length ? { content, images } : { content }),
       })
       if (!res.ok || !res.body) {
         const text = await res.text().catch(() => '')

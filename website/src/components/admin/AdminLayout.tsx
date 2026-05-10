@@ -27,11 +27,7 @@ export function AdminLayout() {
       sidebar={
         <div className="flex h-full flex-col">
           <NavLink to="/admin" className="flex items-center gap-2 px-5 py-4 text-[15px] font-semibold tracking-tight">
-            <span className="grid size-7 place-items-center rounded-lg bg-gradient-to-br from-white to-zinc-300 text-black">
-              <svg viewBox="0 0 24 24" fill="currentColor" className="size-4">
-                <path d="M12 2 4 6v6c0 5 3.5 9.5 8 10 4.5-.5 8-5 8-10V6l-8-4Z" />
-              </svg>
-            </span>
+            <img src="/Logo.png" alt="AI Manager" className="size-11 rounded-xl object-contain" />
             Admin · AI Manager
           </NavLink>
           <NavLink to="/chat" className="mx-3 mb-3 flex h-9 items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] text-xs text-white/80 hover:bg-white/[0.07]">

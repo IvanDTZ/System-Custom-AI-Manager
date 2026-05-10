@@ -44,11 +44,7 @@ export function ChatSidebar({
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between p-4">
         <NavLink to="/chat" className="flex items-center gap-2 text-[15px] font-semibold tracking-tight">
-          <span className="grid size-7 place-items-center rounded-lg bg-gradient-to-br from-white to-zinc-300 text-black">
-            <svg viewBox="0 0 24 24" fill="currentColor" className="size-4">
-              <path d="M12 2 4 6v6c0 5 3.5 9.5 8 10 4.5-.5 8-5 8-10V6l-8-4Z" />
-            </svg>
-          </span>
+          <img src="/Logo.png" alt="AI Manager" className="size-11 rounded-xl object-contain" />
           AI Manager
         </NavLink>
       </div>

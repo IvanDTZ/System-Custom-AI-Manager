@@ -47,8 +47,7 @@ type createUserReq struct {
 
 func (h *AdminUsersHandler) Create(c *gin.Context) {
 	var req createUserReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.Error(c, http.StatusBadRequest, "bad_request", err.Error())
+	if !utils.BindJSON(c, &req) {
 		return
 	}
 	role := strings.ToUpper(strings.TrimSpace(req.Role))
@@ -81,7 +80,8 @@ func (h *AdminUsersHandler) Create(c *gin.Context) {
 		Status:       models.StatusActive,
 	}
 	if err := h.db.Create(&u).Error; err != nil {
-		utils.Error(c, http.StatusBadRequest, "create_failed", err.Error())
+		code, msg := utils.HumanizeDBError(err)
+		utils.Error(c, http.StatusBadRequest, code, msg)
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"user": u})
@@ -99,8 +99,7 @@ func (h *AdminUsersHandler) Update(c *gin.Context) {
 		return
 	}
 	var req updateUserReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.Error(c, http.StatusBadRequest, "bad_request", err.Error())
+	if !utils.BindJSON(c, &req) {
 		return
 	}
 	current := middleware.CurrentUser(c)
@@ -128,7 +127,8 @@ func (h *AdminUsersHandler) Update(c *gin.Context) {
 		return
 	}
 	if err := h.db.Model(target).Updates(updates).Error; err != nil {
-		utils.Error(c, http.StatusBadRequest, "update_failed", err.Error())
+		code, msg := utils.HumanizeDBError(err)
+		utils.Error(c, http.StatusBadRequest, code, msg)
 		return
 	}
 	h.db.First(target, target.ID)
@@ -187,8 +187,7 @@ func (h *AdminUsersHandler) ResetPassword(c *gin.Context) {
 		return
 	}
 	var req resetPasswordReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.Error(c, http.StatusBadRequest, "bad_request", err.Error())
+	if !utils.BindJSON(c, &req) {
 		return
 	}
 	hash, err := utils.HashPassword(req.NewPassword)

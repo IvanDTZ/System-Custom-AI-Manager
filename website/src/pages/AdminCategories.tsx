@@ -5,6 +5,8 @@ import { Button } from '../components/ui/Button'
 import { Badge } from '../components/ui/Badge'
 import { Input } from '../components/ui/Input'
 import { Modal } from '../components/ui/Modal'
+import { Pagination } from '../components/ui/Pagination'
+import { usePagination } from '../hooks/usePagination'
 import * as adminApi from '../api/models'
 import type { Category } from '../types'
 
@@ -19,6 +21,8 @@ export default function AdminCategories() {
   }
   useEffect(() => { refresh() }, [])
 
+  const pagination = usePagination(categories, { pageSize: 20 })
+
   return (
     <div>
       <PageHeader
@@ -28,30 +32,48 @@ export default function AdminCategories() {
       />
 
       <Card className="overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-white/[0.03] text-left text-text-muted">
-            <tr>
-              <th className="px-4 py-2.5 font-medium">Name</th>
-              <th className="px-4 py-2.5 font-medium">Description</th>
-              <th className="px-4 py-2.5 font-medium">Type</th>
-              <th className="px-4 py-2.5 font-medium" />
-            </tr>
-          </thead>
-          <tbody>
-            {categories.map(c => (
-              <tr key={c.id} className="border-t border-white/[0.05] hover:bg-white/[0.03]">
-                <td className="px-4 py-2.5 font-medium">{c.name}</td>
-                <td className="px-4 py-2.5 text-text-muted">{c.description || '—'}</td>
-                <td className="px-4 py-2.5">
-                  <Badge tone={c.is_system ? 'info' : 'neutral'}>{c.is_system ? 'system' : 'custom'}</Badge>
-                </td>
-                <td className="px-4 py-2.5 text-right">
-                  <Button size="sm" variant="ghost" onClick={() => setEditing(c)}>Edit</Button>
-                </td>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[560px] text-sm">
+            <thead className="bg-white/[0.03] text-left text-text-muted">
+              <tr>
+                <th className="px-4 py-2.5 font-medium">Name</th>
+                <th className="px-4 py-2.5 font-medium">Description</th>
+                <th className="px-4 py-2.5 font-medium">Type</th>
+                <th className="px-4 py-2.5 font-medium" />
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {pagination.total === 0 && (
+                <tr><td colSpan={4} className="px-4 py-8 text-center text-text-muted">No categories</td></tr>
+              )}
+              {pagination.pageItems.map(c => (
+                <tr key={c.id} className="border-t border-white/[0.05] hover:bg-white/[0.03]">
+                  <td className="px-4 py-2.5 font-medium">{c.name}</td>
+                  <td className="px-4 py-2.5 text-text-muted">{c.description || '—'}</td>
+                  <td className="px-4 py-2.5">
+                    <Badge tone={c.is_system ? 'info' : 'neutral'}>{c.is_system ? 'system' : 'custom'}</Badge>
+                  </td>
+                  <td className="px-4 py-2.5 text-right">
+                    <Button size="sm" variant="ghost" onClick={() => setEditing(c)}>Edit</Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="border-t border-white/[0.05]">
+          <Pagination
+            page={pagination.page}
+            totalPages={pagination.totalPages}
+            total={pagination.total}
+            rangeStart={pagination.rangeStart}
+            rangeEnd={pagination.rangeEnd}
+            pageSize={pagination.pageSize}
+            onPageChange={pagination.setPage}
+            onPageSizeChange={pagination.setPageSize}
+            itemLabel="categories"
+          />
+        </div>
       </Card>
 
       <CategoryModal

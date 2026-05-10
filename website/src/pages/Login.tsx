@@ -3,6 +3,7 @@ import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 import { Card } from '../components/ui/Card'
 import { Input } from '../components/ui/Input'
+import { PasswordInput } from '../components/ui/PasswordInput'
 import { Button } from '../components/ui/Button'
 import { ApiError } from '../api/client'
 
@@ -47,11 +48,7 @@ export default function Login() {
     <div className="grid min-h-full place-items-center p-6">
       <div className="w-full max-w-md">
         <div className="mb-8 text-center">
-          <div className="mx-auto mb-4 grid size-12 place-items-center rounded-2xl bg-gradient-to-br from-white to-zinc-300 text-black shadow-2xl">
-            <svg viewBox="0 0 24 24" fill="currentColor" className="size-6">
-              <path d="M12 2 4 6v6c0 5 3.5 9.5 8 10 4.5-.5 8-5 8-10V6l-8-4Z" />
-            </svg>
-          </div>
+          <img src="/Logo.png" alt="AI Manager" className="mx-auto mb-6 size-40 rounded-3xl object-contain shadow-2xl sm:size-48 md:size-56" />
           <h1 className="text-2xl font-semibold tracking-tight">Welcome back</h1>
           <p className="mt-1 text-sm text-text-muted">Sign in to your AI Manager workspace</p>
         </div>
@@ -66,9 +63,8 @@ export default function Login() {
               onChange={e => setIdentifier(e.target.value)}
               required
             />
-            <Input
+            <PasswordInput
               label="Password"
-              type="password"
               autoComplete="current-password"
               value={password}
               onChange={e => setPassword(e.target.value)}

@@ -13,6 +13,12 @@ export async function uninstallModel(name: string): Promise<{ ok: boolean }> {
   return request(`/admin/models/${encodeURIComponent(name)}`, { method: 'DELETE' })
 }
 
+// forgetModel removes the row from our DB without touching Ollama. Only works
+// for already-uninstalled models — used to clean stale entries.
+export async function forgetModel(id: number): Promise<{ ok: boolean }> {
+  return request(`/admin/models/db/${id}`, { method: 'DELETE' })
+}
+
 export async function updateModel(id: number, input: {
   display_name?: string
   description?: string

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import * as chatApi from '../api/chat'
+import { confirm, notify } from '../components/ui/dialogs'
 import type { Chat as ChatT, ChatMessage } from '../types'
 import { Shell } from '../components/layout/Shell'
 import { ChatSidebar } from '../components/chat/ChatSidebar'
@@ -73,14 +74,29 @@ export default function ChatPage() {
   }
 
   async function handleDelete(id: number) {
-    if (!window.confirm('Delete this conversation?')) return
+    const ok = await confirm({
+      title: 'Delete conversation',
+      message: 'This conversation and all its messages will be permanently deleted.',
+      confirmLabel: 'Delete',
+      danger: true,
+    })
+    if (!ok) return
     await chatApi.deleteChat(id)
     if (chat?.id === id) nav('/chat')
     refreshChats()
   }
 
-  async function handleSend(content: string) {
-    if (!model) return alert('Please pick a model first.')
+  async function handleSend(payload: string | { content: string; images?: string[] }) {
+    if (!model) {
+      await notify({
+        title: 'Pick a model first',
+        message: 'Open the model selector at the top-right and choose one before sending.',
+        tone: 'info',
+      })
+      return
+    }
+    const content = typeof payload === 'string' ? payload : payload.content
+    const images = typeof payload === 'string' ? undefined : payload.images
 
     let activeChat = chat
     if (!activeChat) {
@@ -95,21 +111,25 @@ export default function ChatPage() {
       chat_id: activeChat.id,
       role: 'user',
       content,
+      images,
       created_at: new Date().toISOString(),
     }
     setMessages(prev => [...prev, userMsg])
     userScrolledUpRef.current = false
 
-    stream.start(activeChat.id, content, (info, finalText) => {
-      setMessages(prev => [...prev, {
-        id: info.message_id || Date.now(),
-        chat_id: info.chat_id,
-        role: 'assistant',
-        content: finalText,
-        model_name: model,
-        created_at: new Date().toISOString(),
-      }])
-      refreshChats()
+    stream.start(activeChat.id, content, {
+      images,
+      onDone: (info, finalText) => {
+        setMessages(prev => [...prev, {
+          id: info.message_id || Date.now(),
+          chat_id: info.chat_id,
+          role: 'assistant',
+          content: finalText,
+          model_name: model,
+          created_at: new Date().toISOString(),
+        }])
+        refreshChats()
+      },
     })
   }
 
@@ -164,25 +184,42 @@ export default function ChatPage() {
         <div ref={scrollerRef} className="flex-1 overflow-y-auto">
           {empty ? (
             <div className="mx-auto flex h-full max-w-3xl flex-col items-center justify-center px-6 py-10">
-              <div className="grid size-14 place-items-center rounded-2xl bg-gradient-to-br from-white to-zinc-300 text-black shadow-2xl">
-                <svg viewBox="0 0 24 24" fill="currentColor" className="size-7">
-                  <path d="M12 2 4 6v6c0 5 3.5 9.5 8 10 4.5-.5 8-5 8-10V6l-8-4Z" />
-                </svg>
-              </div>
+              <img src="/Logo.png" alt="AI Manager" className="size-36 rounded-3xl object-contain shadow-2xl sm:size-44 md:size-52" />
               <h1 className="mt-6 text-3xl font-semibold tracking-tight">How can I help today?</h1>
-              <p className="mt-2 text-text-muted">Pick a model and start typing — your conversation will appear here.</p>
-              <div className="mt-8 grid w-full grid-cols-1 gap-3 sm:grid-cols-2">
-                {SUGGESTIONS.map(s => (
-                  <button
-                    key={s.title}
-                    onClick={() => handleSend(`${s.title} — ${s.subtitle}`)}
-                    className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-4 text-left transition-colors hover:border-white/15 hover:bg-white/[0.06]"
-                  >
-                    <div className="text-sm font-medium">{s.title}</div>
-                    <div className="mt-0.5 text-xs text-text-muted">{s.subtitle}</div>
-                  </button>
-                ))}
-              </div>
+
+              {!model ? (
+                <div className="mt-6 w-full max-w-xl rounded-2xl border border-amber-300/30 bg-amber-300/[0.06] p-5 text-center">
+                  <div className="mx-auto mb-3 grid size-10 place-items-center rounded-xl bg-amber-300/15 text-amber-200">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-5">
+                      <path d="m12 19-7-7 7-7" />
+                      <path d="M19 12H5" />
+                    </svg>
+                  </div>
+                  <h2 className="text-lg font-medium text-amber-100">Pick a model to start</h2>
+                  <p className="mt-1.5 text-sm text-amber-200/80">
+                    Open the <span className="rounded-md bg-white/10 px-1.5 py-0.5 font-medium text-white">Model</span> selector at the top-right of this page and choose one. The chat input is disabled until then.
+                  </p>
+                  <p className="mt-3 text-xs text-amber-200/60">
+                    No models in the list? Go to <span className="font-medium text-amber-100">Admin → Models</span>, click <span className="font-medium text-amber-100">Sync</span>, then enable one.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <p className="mt-2 text-text-muted">Pick a suggestion or just start typing.</p>
+                  <div className="mt-8 grid w-full grid-cols-1 gap-3 sm:grid-cols-2">
+                    {SUGGESTIONS.map(s => (
+                      <button
+                        key={s.title}
+                        onClick={() => handleSend(`${s.title} — ${s.subtitle}`)}
+                        className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-4 text-left transition-colors hover:border-white/15 hover:bg-white/[0.06]"
+                      >
+                        <div className="text-sm font-medium">{s.title}</div>
+                        <div className="mt-0.5 text-xs text-text-muted">{s.subtitle}</div>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
           ) : (
             <div className="mx-auto flex max-w-3xl flex-col gap-7 px-6 py-8">

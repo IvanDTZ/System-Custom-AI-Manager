@@ -6,8 +6,12 @@ import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Badge } from '../components/ui/Badge'
 import { Input } from '../components/ui/Input'
+import { PasswordInput } from '../components/ui/PasswordInput'
 import { Select } from '../components/ui/Select'
 import { Modal } from '../components/ui/Modal'
+import { Pagination } from '../components/ui/Pagination'
+import { confirm, notify } from '../components/ui/dialogs'
+import { usePagination } from '../hooks/usePagination'
 
 function statusTone(s: string) {
   if (s === 'active') return 'success' as const
@@ -31,12 +35,19 @@ export default function AdminUsers() {
   useEffect(() => { refresh() }, [statusFilter])
 
   const filtered = useMemo(() => users, [users])
+  const pagination = usePagination(filtered, { pageSize: 20 })
 
   async function handleApprove(u: User) {
     await usersApi.approveUser(u.id); refresh()
   }
   async function handleDisable(u: User) {
-    if (!window.confirm(`Disable ${u.email}?`)) return
+    const ok = await confirm({
+      title: 'Disable user',
+      message: <>Disable <span className="font-medium text-white">{u.email}</span>? They won't be able to sign in until you enable them again.</>,
+      confirmLabel: 'Disable',
+      danger: true,
+    })
+    if (!ok) return
     await usersApi.disableUser(u.id); refresh()
   }
   async function handleEnable(u: User) {
@@ -72,63 +83,78 @@ export default function AdminUsers() {
       </Card>
 
       <Card className="overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-white/[0.03] text-left text-text-muted">
-            <tr>
-              <th className="px-4 py-2.5 font-medium">User</th>
-              <th className="px-4 py-2.5 font-medium">Status</th>
-              <th className="px-4 py-2.5 font-medium">Role</th>
-              <th className="px-4 py-2.5 font-medium">Provider</th>
-              <th className="px-4 py-2.5 font-medium">Last login</th>
-              <th className="px-4 py-2.5 font-medium" />
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.length === 0 && (
-              <tr><td colSpan={6} className="px-4 py-8 text-center text-text-muted">No users</td></tr>
-            )}
-            {filtered.map(u => (
-              <tr key={u.id} className="border-t border-white/[0.05] hover:bg-white/[0.03]">
-                <td className="px-4 py-2.5">
-                  <div className="flex items-center gap-3">
-                    <div className="grid size-8 place-items-center rounded-full bg-white/[0.06] text-xs font-semibold">
-                      {(u.name || u.email).slice(0, 2).toUpperCase()}
-                    </div>
-                    <div>
-                      <div className="font-medium">{u.name || u.username || u.email}</div>
-                      <div className="text-xs text-text-subtle">{u.email}</div>
-                    </div>
-                  </div>
-                </td>
-                <td className="px-4 py-2.5"><Badge tone={statusTone(u.status)}>{u.status}</Badge></td>
-                <td className="px-4 py-2.5">
-                  <Badge tone={u.role === 'SUPER_ADMIN' ? 'info' : u.role === 'ADMIN' ? 'success' : 'neutral'}>{u.role.replace('_', ' ')}</Badge>
-                </td>
-                <td className="px-4 py-2.5 text-text-muted">{u.provider}</td>
-                <td className="px-4 py-2.5 text-text-muted">
-                  {u.last_login_at ? new Date(u.last_login_at).toLocaleString() : '—'}
-                </td>
-                <td className="px-4 py-2.5">
-                  <div className="flex justify-end gap-1">
-                    {u.status === 'pending' && (
-                      <Button size="sm" variant="secondary" onClick={() => handleApprove(u)}>Approve</Button>
-                    )}
-                    {u.status === 'disabled' && (
-                      <Button size="sm" variant="secondary" onClick={() => handleEnable(u)}>Enable</Button>
-                    )}
-                    {u.status === 'active' && (
-                      <Button size="sm" variant="ghost" onClick={() => handleDisable(u)}>Disable</Button>
-                    )}
-                    <Button size="sm" variant="ghost" onClick={() => setEditing(u)}>Edit</Button>
-                    {u.provider === 'local' && (
-                      <Button size="sm" variant="ghost" onClick={() => setResetting(u)}>Reset pwd</Button>
-                    )}
-                  </div>
-                </td>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[820px] text-sm">
+            <thead className="bg-white/[0.03] text-left text-text-muted">
+              <tr>
+                <th className="px-4 py-2.5 font-medium">User</th>
+                <th className="px-4 py-2.5 font-medium">Status</th>
+                <th className="px-4 py-2.5 font-medium">Role</th>
+                <th className="px-4 py-2.5 font-medium">Provider</th>
+                <th className="px-4 py-2.5 font-medium">Last login</th>
+                <th className="px-4 py-2.5 font-medium" />
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {pagination.total === 0 && (
+                <tr><td colSpan={6} className="px-4 py-8 text-center text-text-muted">No users</td></tr>
+              )}
+              {pagination.pageItems.map(u => (
+                <tr key={u.id} className="border-t border-white/[0.05] hover:bg-white/[0.03]">
+                  <td className="px-4 py-2.5">
+                    <div className="flex items-center gap-3">
+                      <div className="grid size-8 place-items-center rounded-full bg-white/[0.06] text-xs font-semibold">
+                        {(u.name || u.email).slice(0, 2).toUpperCase()}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="truncate font-medium">{u.name || u.username || u.email}</div>
+                        <div className="truncate text-xs text-text-subtle">{u.email}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-4 py-2.5"><Badge tone={statusTone(u.status)}>{u.status}</Badge></td>
+                  <td className="px-4 py-2.5">
+                    <Badge tone={u.role === 'SUPER_ADMIN' ? 'info' : u.role === 'ADMIN' ? 'success' : 'neutral'}>{u.role.replace('_', ' ')}</Badge>
+                  </td>
+                  <td className="px-4 py-2.5 text-text-muted">{u.provider}</td>
+                  <td className="px-4 py-2.5 text-text-muted">
+                    {u.last_login_at ? new Date(u.last_login_at).toLocaleString() : '—'}
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <div className="flex flex-wrap justify-end gap-1">
+                      {u.status === 'pending' && (
+                        <Button size="sm" variant="secondary" onClick={() => handleApprove(u)}>Approve</Button>
+                      )}
+                      {u.status === 'disabled' && (
+                        <Button size="sm" variant="secondary" onClick={() => handleEnable(u)}>Enable</Button>
+                      )}
+                      {u.status === 'active' && (
+                        <Button size="sm" variant="ghost" onClick={() => handleDisable(u)}>Disable</Button>
+                      )}
+                      <Button size="sm" variant="ghost" onClick={() => setEditing(u)}>Edit</Button>
+                      {u.provider === 'local' && (
+                        <Button size="sm" variant="ghost" onClick={() => setResetting(u)}>Reset pwd</Button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="border-t border-white/[0.05]">
+          <Pagination
+            page={pagination.page}
+            totalPages={pagination.totalPages}
+            total={pagination.total}
+            rangeStart={pagination.rangeStart}
+            rangeEnd={pagination.rangeEnd}
+            pageSize={pagination.pageSize}
+            onPageChange={pagination.setPage}
+            onPageSizeChange={pagination.setPageSize}
+            itemLabel="users"
+          />
+        </div>
       </Card>
 
       <CreateUserModal open={creating} onClose={() => setCreating(false)} onCreated={() => { setCreating(false); refresh() }} />
@@ -173,7 +199,7 @@ function CreateUserModal({ open, onClose, onCreated }: { open: boolean; onClose:
         <Input label="Name" value={name} onChange={e => setName(e.target.value)} />
         <Input label="Username" value={username} onChange={e => setUsername(e.target.value)} />
         <Input label="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} />
-        <Input label="Password" type="password" value={password} onChange={e => setPassword(e.target.value)} />
+        <PasswordInput label="Password" hint="At least 8 characters" value={password} onChange={e => setPassword(e.target.value)} />
         <Select label="Role" value={role} onChange={e => setRole(e.target.value as Role)}>
           <option value="USER">USER</option>
           <option value="ADMIN">ADMIN</option>
@@ -245,8 +271,12 @@ function ResetPasswordModal({ user, onClose, onSaved }: { user: User | null; onC
     setBusy(true); setError(null)
     try {
       await usersApi.resetPassword(user.id, pwd)
-      alert('Password updated')
       onSaved()
+      await notify({
+        title: 'Password updated',
+        message: <>The password for <span className="font-medium text-white">{user.email}</span> was changed successfully.</>,
+        tone: 'success',
+      })
     } catch (e) { setError((e as Error).message) }
     finally { setBusy(false) }
   }
@@ -263,7 +293,7 @@ function ResetPasswordModal({ user, onClose, onSaved }: { user: User | null; onC
         </>
       }
     >
-      <Input label="New password" type="password" value={pwd} onChange={e => setPwd(e.target.value)} />
+      <PasswordInput label="New password" hint="At least 8 characters" value={pwd} onChange={e => setPwd(e.target.value)} />
       {error && <div className="mt-2 rounded-md border border-red-400/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">{error}</div>}
     </Modal>
   )

@@ -52,6 +52,9 @@ export interface ChatMessage {
   content: string
   model_name?: string
   created_at: string
+  // Base64-encoded image payloads (no "data:..." prefix) attached to user
+  // messages. Only vision-capable models read them.
+  images?: string[]
 }
 
 export interface Chat {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { PageHeader } from '../components/admin/PageHeader'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
@@ -6,8 +6,14 @@ import { Badge } from '../components/ui/Badge'
 import { Input } from '../components/ui/Input'
 import { Select } from '../components/ui/Select'
 import { Modal } from '../components/ui/Modal'
+import { Pagination } from '../components/ui/Pagination'
+import { confirm } from '../components/ui/dialogs'
+import { usePagination } from '../hooks/usePagination'
 import * as adminApi from '../api/models'
 import type { AIModel, Category } from '../types'
+import { AVAILABLE_MODELS } from '../data/availableModels'
+
+const CUSTOM_OPTION = '__custom__'
 
 function fmtBytes(n: number) {
   if (!n) return '—'
@@ -21,11 +27,22 @@ export default function AdminModels() {
   const [models, setModels] = useState<AIModel[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [installing, setInstalling] = useState(false)
-  const [installName, setInstallName] = useState('')
+  const [selectedModel, setSelectedModel] = useState<string>(AVAILABLE_MODELS[1]?.name ?? '')
+  const [customName, setCustomName] = useState('')
   const [installLog, setInstallLog] = useState('')
   const [editing, setEditing] = useState<AIModel | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const installedNames = useMemo(
+    () => new Set(models.filter(m => m.is_installed).map(m => m.ollama_name)),
+    [models],
+  )
+  const installName = selectedModel === CUSTOM_OPTION ? customName.trim() : selectedModel
+  const selectedMeta = AVAILABLE_MODELS.find(m => m.name === selectedModel)
+  const alreadyInstalled = installName !== '' && installedNames.has(installName)
+
+  const pagination = usePagination(models, { pageSize: 20 })
 
   async function refresh() {
     const [m, c] = await Promise.all([adminApi.adminListModels(), adminApi.listCategories()])
@@ -43,19 +60,46 @@ export default function AdminModels() {
   }
 
   function handleInstall() {
-    if (!installName.trim()) return
+    const name = installName
+    if (!name) return
     setInstalling(true); setInstallLog('')
-    adminApi.installModel(installName.trim(), {
+    adminApi.installModel(name, {
       onProgress: ev => setInstallLog(prev => prev + `\n${ev.status}${ev.total ? ` (${Math.round(((ev.completed ?? 0) / ev.total) * 100)}%)` : ''}`),
-      onDone: () => { setInstalling(false); setInstallName(''); refresh() },
+      onDone: () => {
+        setInstalling(false)
+        setCustomName('')
+        refresh()
+      },
       onError: (msg) => { setInstalling(false); setInstallLog(prev => prev + `\nERROR: ${msg}`) },
     })
   }
 
   async function handleUninstall(name: string) {
-    if (!window.confirm(`Uninstall ${name}?`)) return
+    const ok = await confirm({
+      title: 'Uninstall model',
+      message: <>Remove <span className="font-medium text-white">{name}</span> from Ollama? You can re-install it any time, but it will redownload the full model.</>,
+      confirmLabel: 'Uninstall',
+      danger: true,
+    })
+    if (!ok) return
     await adminApi.uninstallModel(name)
     refresh()
+  }
+
+  async function handleForget(m: AIModel) {
+    const ok = await confirm({
+      title: 'Remove from list',
+      message: <>Remove <span className="font-medium text-white">{m.ollama_name}</span> from this list? Ollama is not affected — this just deletes the row in the admin table. Re-install it from the dropdown to bring it back.</>,
+      confirmLabel: 'Remove',
+      danger: true,
+    })
+    if (!ok) return
+    try {
+      await adminApi.forgetModel(m.id)
+      refresh()
+    } catch (e) {
+      setError((e as Error).message)
+    }
   }
 
   async function handleToggleEnabled(m: AIModel) {
@@ -78,17 +122,57 @@ export default function AdminModels() {
       <Card className="mb-4 p-3">
         <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-end">
           <div className="flex-1">
-            <Input
+            <Select
               label="Install model"
-              placeholder="e.g. llama3.1:8b"
-              value={installName}
-              onChange={e => setInstallName(e.target.value)}
-            />
+              value={selectedModel}
+              onChange={e => setSelectedModel(e.target.value)}
+            >
+              <optgroup label="Light — best for 8 GB Macs">
+                {AVAILABLE_MODELS.filter(m => m.recommended === 'low-end').map(m => (
+                  <option key={m.name} value={m.name}>
+                    {m.label} · {m.size}{installedNames.has(m.name) ? ' · installed' : ''}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="Medium — 16 GB+ recommended">
+                {AVAILABLE_MODELS.filter(m => m.recommended === 'mid').map(m => (
+                  <option key={m.name} value={m.name}>
+                    {m.label} · {m.size}{installedNames.has(m.name) ? ' · installed' : ''}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="Heavy — high-RAM Macs only">
+                {AVAILABLE_MODELS.filter(m => m.recommended === 'high-end').map(m => (
+                  <option key={m.name} value={m.name}>
+                    {m.label} · {m.size}{installedNames.has(m.name) ? ' · installed' : ''}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="Other">
+                <option value={CUSTOM_OPTION}>Custom name…</option>
+              </optgroup>
+            </Select>
           </div>
-          <Button onClick={handleInstall} loading={installing} disabled={!installName.trim()}>
-            Pull from Ollama
+          {selectedModel === CUSTOM_OPTION && (
+            <div className="flex-1">
+              <Input
+                label="Custom Ollama name"
+                placeholder="e.g. mixtral:8x7b"
+                value={customName}
+                onChange={e => setCustomName(e.target.value)}
+              />
+            </div>
+          )}
+          <Button onClick={handleInstall} loading={installing} disabled={!installName || alreadyInstalled}>
+            {alreadyInstalled ? 'Already installed' : 'Pull from Ollama'}
           </Button>
         </div>
+        {selectedMeta && selectedModel !== CUSTOM_OPTION && (
+          <p className="mt-2 text-xs text-text-muted">
+            <span className="text-text-subtle">{selectedMeta.ramHint} · </span>
+            {selectedMeta.description}
+          </p>
+        )}
         {installLog && (
           <pre className="mt-3 max-h-48 overflow-auto rounded-lg border border-white/10 bg-black/50 p-3 text-[11px] leading-5 text-text-muted">
             {installLog.trim()}
@@ -97,51 +181,68 @@ export default function AdminModels() {
       </Card>
 
       <Card className="overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-white/[0.03] text-left text-text-muted">
-            <tr>
-              <th className="px-4 py-2.5 font-medium">Model</th>
-              <th className="px-4 py-2.5 font-medium">Category</th>
-              <th className="px-4 py-2.5 font-medium">Size</th>
-              <th className="px-4 py-2.5 font-medium">Status</th>
-              <th className="px-4 py-2.5 font-medium" />
-            </tr>
-          </thead>
-          <tbody>
-            {models.length === 0 && (
-              <tr><td colSpan={5} className="px-4 py-10 text-center text-text-muted">
-                No models. Click "Sync with Ollama" or install one above.
-              </td></tr>
-            )}
-            {models.map(m => (
-              <tr key={m.id} className="border-t border-white/[0.05] hover:bg-white/[0.03]">
-                <td className="px-4 py-2.5">
-                  <div className="font-medium">{m.display_name || m.ollama_name}</div>
-                  <div className="text-xs text-text-subtle">{m.ollama_name} · {m.parameter_size || '—'} · {m.family || '—'}</div>
-                </td>
-                <td className="px-4 py-2.5 text-text-muted">{m.category?.name ?? '—'}</td>
-                <td className="px-4 py-2.5 text-text-muted">{fmtBytes(m.size)}</td>
-                <td className="px-4 py-2.5">
-                  <div className="flex flex-wrap gap-1.5">
-                    <Badge tone={m.is_installed ? 'success' : 'warning'}>{m.is_installed ? 'installed' : 'missing'}</Badge>
-                    <Badge tone={m.is_enabled ? 'info' : 'neutral'}>{m.is_enabled ? 'enabled' : 'disabled'}</Badge>
-                  </div>
-                </td>
-                <td className="px-4 py-2.5">
-                  <div className="flex justify-end gap-1">
-                    <Button size="sm" variant="ghost" onClick={() => setEditing(m)}>Edit</Button>
-                    <Button size="sm" variant="secondary" onClick={() => handleToggleEnabled(m)}>
-                      {m.is_enabled ? 'Disable' : 'Enable'}
-                    </Button>
-                    {m.is_installed && (
-                      <Button size="sm" variant="ghost" onClick={() => handleUninstall(m.ollama_name)}>Uninstall</Button>
-                    )}
-                  </div>
-                </td>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[680px] text-sm">
+            <thead className="bg-white/[0.03] text-left text-text-muted">
+              <tr>
+                <th className="px-4 py-2.5 font-medium">Model</th>
+                <th className="px-4 py-2.5 font-medium">Category</th>
+                <th className="px-4 py-2.5 font-medium">Size</th>
+                <th className="px-4 py-2.5 font-medium">Status</th>
+                <th className="px-4 py-2.5 font-medium" />
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {pagination.total === 0 && (
+                <tr><td colSpan={5} className="px-4 py-10 text-center text-text-muted">
+                  No models. Click "Sync with Ollama" or install one above.
+                </td></tr>
+              )}
+              {pagination.pageItems.map(m => (
+                <tr key={m.id} className="border-t border-white/[0.05] hover:bg-white/[0.03]">
+                  <td className="px-4 py-2.5">
+                    <div className="font-medium">{m.display_name || m.ollama_name}</div>
+                    <div className="text-xs text-text-subtle">{m.ollama_name} · {m.parameter_size || '—'} · {m.family || '—'}</div>
+                  </td>
+                  <td className="px-4 py-2.5 text-text-muted">{m.category?.name ?? '—'}</td>
+                  <td className="px-4 py-2.5 text-text-muted">{fmtBytes(m.size)}</td>
+                  <td className="px-4 py-2.5">
+                    <div className="flex flex-wrap gap-1.5">
+                      <Badge tone={m.is_installed ? 'success' : 'warning'}>{m.is_installed ? 'installed' : 'missing'}</Badge>
+                      <Badge tone={m.is_enabled ? 'info' : 'neutral'}>{m.is_enabled ? 'enabled' : 'disabled'}</Badge>
+                    </div>
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <div className="flex flex-wrap justify-end gap-1">
+                      <Button size="sm" variant="ghost" onClick={() => setEditing(m)}>Edit</Button>
+                      <Button size="sm" variant="secondary" onClick={() => handleToggleEnabled(m)}>
+                        {m.is_enabled ? 'Disable' : 'Enable'}
+                      </Button>
+                      {m.is_installed ? (
+                        <Button size="sm" variant="ghost" onClick={() => handleUninstall(m.ollama_name)}>Uninstall</Button>
+                      ) : (
+                        <Button size="sm" variant="danger" onClick={() => handleForget(m)}>Remove</Button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="border-t border-white/[0.05]">
+          <Pagination
+            page={pagination.page}
+            totalPages={pagination.totalPages}
+            total={pagination.total}
+            rangeStart={pagination.rangeStart}
+            rangeEnd={pagination.rangeEnd}
+            pageSize={pagination.pageSize}
+            onPageChange={pagination.setPage}
+            onPageSizeChange={pagination.setPageSize}
+            itemLabel="models"
+          />
+        </div>
       </Card>
 
       <EditModelModal model={editing} categories={categories} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); refresh() }} />

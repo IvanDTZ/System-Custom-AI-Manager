@@ -84,6 +84,7 @@ func Register(r *gin.Engine, d Deps) {
 		admin.GET("/models", modelsH.AdminList)
 		admin.POST("/models/sync", modelsH.Sync)
 		admin.POST("/models/install", modelsH.Install)
+		admin.DELETE("/models/db/:id", modelsH.Forget)
 		admin.DELETE("/models/:name", modelsH.Uninstall)
 		admin.PATCH("/models/:id", modelsH.Update)
 

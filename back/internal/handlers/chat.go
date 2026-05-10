@@ -54,8 +54,7 @@ type createChatReq struct {
 func (h *ChatHandler) Create(c *gin.Context) {
 	user := middleware.CurrentUser(c)
 	var req createChatReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.Error(c, http.StatusBadRequest, "bad_request", err.Error())
+	if !utils.BindJSON(c, &req) {
 		return
 	}
 	title := strings.TrimSpace(req.Title)
@@ -93,6 +92,9 @@ func (h *ChatHandler) Delete(c *gin.Context) {
 
 type sendMessageReq struct {
 	Content string `json:"content" binding:"required"`
+	// Images are base64-encoded payloads (no "data:..." prefix). Forwarded to
+	// Ollama for vision-capable models. Hard cap at 8 attachments.
+	Images []string `json:"images,omitempty" binding:"max=8,dive,max=12000000"`
 }
 
 // Stream: SSE that sends each token from Ollama, persists messages and
@@ -112,8 +114,7 @@ func (h *ChatHandler) Stream(c *gin.Context) {
 	user := middleware.CurrentUser(c)
 
 	var req sendMessageReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.Error(c, http.StatusBadRequest, "bad_request", err.Error())
+	if !utils.BindJSON(c, &req) {
 		return
 	}
 
@@ -128,6 +129,7 @@ func (h *ChatHandler) Stream(c *gin.Context) {
 		Role:    models.MessageRoleUser,
 		Content: req.Content,
 	}
+	userMsg.SetImages(req.Images)
 	if err := h.db.Create(&userMsg).Error; err != nil {
 		utils.Error(c, http.StatusInternalServerError, "db_error", err.Error())
 		return
@@ -213,7 +215,11 @@ func (h *ChatHandler) Stream(c *gin.Context) {
 	h.db.Where("chat_id = ?", chat.ID).Order("created_at ASC").Find(&history)
 	ollamaMsgs := make([]ollama.ChatMessage, 0, len(history))
 	for _, m := range history {
-		ollamaMsgs = append(ollamaMsgs, ollama.ChatMessage{Role: m.Role, Content: m.Content})
+		ollamaMsgs = append(ollamaMsgs, ollama.ChatMessage{
+			Role:    m.Role,
+			Content: m.Content,
+			Images:  m.GetImages(),
+		})
 	}
 
 	var sb strings.Builder

@@ -19,7 +19,7 @@ export interface UseStreamResult {
   state: StreamState
   queuePosition: number | null
   error: string | null
-  start: (chatId: number, content: string, onDone?: (info: { chat_id: number; message_id: number }, finalText: string) => void) => void
+  start: (chatId: number, content: string, opts?: { images?: string[]; onDone?: (info: { chat_id: number; message_id: number }, finalText: string) => void }) => void
   stop: () => void
   reset: () => void
 }
@@ -67,7 +67,7 @@ export function useStream(): UseStreamResult {
     setState(s => (s === 'idle' || s === 'done' || s === 'error' ? s : 'done'))
   }, [])
 
-  const start = useCallback((chatId: number, content: string, onDone?: (info: { chat_id: number; message_id: number }, finalText: string) => void) => {
+  const start = useCallback((chatId: number, content: string, opts?: { images?: string[]; onDone?: (info: { chat_id: number; message_id: number }, finalText: string) => void }) => {
     // Cancel any in-flight stream first.
     ctrlRef.current?.abort()
     bufferRef.current = ''
@@ -76,7 +76,7 @@ export function useStream(): UseStreamResult {
     setError(null)
     setQueuePosition(null)
     setState('queued')
-    onDoneRef.current = onDone ?? null
+    onDoneRef.current = opts?.onDone ?? null
 
     ctrlRef.current = streamMessage(chatId, content, {
       onQueued: (pos) => {
@@ -109,7 +109,7 @@ export function useStream(): UseStreamResult {
         setError(msg)
         setState('error')
       },
-    })
+    }, opts?.images)
   }, [scheduleFlush])
 
   // Cleanup on unmount.

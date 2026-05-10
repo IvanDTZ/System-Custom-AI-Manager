@@ -103,8 +103,7 @@ type installReq struct {
 // Install streams pull progress as SSE.
 func (h *ModelsHandler) Install(c *gin.Context) {
 	var req installReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.Error(c, http.StatusBadRequest, "bad_request", err.Error())
+	if !utils.BindJSON(c, &req) {
 		return
 	}
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
@@ -177,6 +176,32 @@ func (h *ModelsHandler) Uninstall(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
+// Forget removes a model row from our DB. Only allowed for already-uninstalled
+// models so admins can clean up the list without re-syncing. Does NOT touch
+// Ollama — that's what Uninstall is for.
+func (h *ModelsHandler) Forget(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "bad_id", "Invalid id")
+		return
+	}
+	var m models.AIModel
+	if err := h.db.First(&m, id).Error; err != nil {
+		utils.Error(c, http.StatusNotFound, "not_found", "Model not found")
+		return
+	}
+	if m.IsInstalled {
+		utils.Error(c, http.StatusBadRequest, "still_installed", "Uninstall the model first before removing it from the list")
+		return
+	}
+	if err := h.db.Delete(&m).Error; err != nil {
+		code, msg := utils.HumanizeDBError(err)
+		utils.Error(c, http.StatusInternalServerError, code, msg)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
 type updateModelReq struct {
 	DisplayName *string `json:"display_name"`
 	Description *string `json:"description"`
@@ -196,8 +221,7 @@ func (h *ModelsHandler) Update(c *gin.Context) {
 		return
 	}
 	var req updateModelReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.Error(c, http.StatusBadRequest, "bad_request", err.Error())
+	if !utils.BindJSON(c, &req) {
 		return
 	}
 	updates := map[string]any{}
